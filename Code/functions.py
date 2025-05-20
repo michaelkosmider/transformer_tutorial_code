@@ -1,26 +1,18 @@
 import torch
 
-"""
-Desciption:
 
-This function computes the attention matrix between queries Q and keys K, which have shapes 
-(T1, D_K) and (T2, D_K) respectively. Here, T1 represents the length of the input sequence 
-used to create Q, and D_K is the key size. Furthermore, any batch size (d0, d1, ... , dn) is 
-supported. A typical batch size would be (N, num_heads), where N is the input batch size and 
-num_heads is the number of attention heads in the multi head attention layer. Make sure that
-Q and K have the same batch size, so that there is exactly one key matrix per query matrix.
+def compute_attention_matrix(Q, K, causal_mask=None, key_padding_mask=None):
+    """
+    Private notes: expecting Q and K to be of shapes (N_batch, heads, Qseqlen, D_k) and (N_batch, heads, Kseqlen, D_k)
+    """
+    E = Q @ K.transpose(-1, -2)
 
-Input:
+    if causal_mask is not None:
+        E.masked_fill_(causal_mask, -torch.inf)
 
-Q - a tensor of shape (d0, d1, ... , dn, T1, D_K)
-K - a tensor of shape (d0, d1, ... , dn, T2, D_K)
+    if key_padding_mask is not None:
+        E.masked_fill_(key_padding_mask[:, torch.newaxis, torch.newaxis, :], -torch.inf)
 
-Output:
-
-A - a tensor of shape (d0, d1, ... , dn, T1, T2)
-"""
-def compute_attention_matrix(Q, K):
-    E = Q @ K.transpose(-1, -2) 
     A = torch.softmax(E / (Q.shape[-1] ** 0.5), -1)
     return A
 
@@ -41,6 +33,8 @@ Output:
 
 - a tensor of shape (d0, d1, ... , dn, C/S, R, slice_size)
 """
+
+
 def slice_vertically(X, slice_size):
     return X.unflatten(dim=-1, sizes=(-1, slice_size)).transpose(-2, -3)
 
@@ -62,5 +56,7 @@ Output:
 
 - a tensor of shape (d0, d1, ... , dn, R, C x S)
 """
+
+
 def unslice_vertically(X):
     return X.transpose(-2, -3).flatten(-2, -1)

@@ -18,13 +18,13 @@ class MultiHeadAttention(nn.Module):
         for param in self.parameters():
             nn.init.xavier_normal_(param)
 
-    def forward(self, X_Q, X_KV):
+    def forward(self, X_Q, X_KV, causal_mask=None, key_padding_mask=None):
         #
         Q = slice_vertically(X_Q @ self.W_Q, self.key_size)
         K = slice_vertically(X_KV @ self.W_K, self.key_size)
         V = slice_vertically(X_KV @ self.W_V, self.value_size)
 
-        A = compute_attention_matrix(Q, K)
+        A = compute_attention_matrix(Q, K, causal_mask, key_padding_mask)
 
         Y_prime = A @ V
 

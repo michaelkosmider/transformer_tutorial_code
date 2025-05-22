@@ -11,7 +11,7 @@ def compute_attention_matrix(Q, K, causal_mask=None, key_padding_mask=None):
         E.masked_fill_(causal_mask, -torch.inf)
 
     if key_padding_mask is not None:
-        E.masked_fill_(key_padding_mask[:, torch.newaxis, torch.newaxis, :], -torch.inf)
+        E.masked_fill_(key_padding_mask[:, None, None, :], -torch.inf)
 
     A = torch.softmax(E / (Q.shape[-1] ** 0.5), -1)
     return A

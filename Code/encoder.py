@@ -69,15 +69,3 @@ class TransformerEncoder(nn.Module):
             X = encoder_layer(X, key_padding_mask)
 
         return X
-
-
-dataloaders = {}
-
-for split, pairs in data.items():
-    dataset = Multi30k(pairs, en_vocab, fr_vocab)
-    dataloaders[split] = data.DataLoader(
-        dataset,
-        batch_size=BATCH_SIZE,
-        shuffle=(split == "train"),  # Shuffle only True for training data
-        collate_fn=custom_collate,
-    )

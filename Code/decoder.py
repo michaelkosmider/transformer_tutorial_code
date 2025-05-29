@@ -23,7 +23,7 @@ class DecoderLayer(nn.Module):
         )
 
     def forward(
-        self, X_Q, X_KV, causal_mask, src_key_padding_mask, tgt_key_padding_mask
+        self, X_Q, X_KV, causal_mask, tgt_key_padding_mask, src_key_padding_mask
     ):
 
         X = self.self_multihead_attention_sublayer(
@@ -81,7 +81,7 @@ class TransformerDecoder(nn.Module):
 
         for decoder_layer in self.decoder_stack:
             X = decoder_layer(
-                X, X_src, tgt_causal_mask, src_key_padding_mask, tgt_key_padding_mask
+                X, X_src, tgt_causal_mask, tgt_key_padding_mask, src_key_padding_mask
             )
 
         return X

@@ -60,3 +60,7 @@ Output:
 
 def unslice_vertically(X):
     return X.transpose(-2, -3).flatten(-2, -1)
+
+
+def get_causal_mask(T, device):
+    return torch.triu(torch.ones((T, T), device=device, dtype=torch.bool), diagonal=1)

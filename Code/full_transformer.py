@@ -98,3 +98,60 @@ class Transformer(nn.Module):
             beam_scores = beam_scores[beam_indices] + scores.view(beam_K, 1)
 
         return beams
+
+
+epochs_completed = 0
+
+if os.path.exists("checkpoint.pt"):
+    checkpoint = torch.load("checkpoint.pt")
+    model.load_state_dict(checkpoint["model_state_dict"])
+    optimizer.load_state_dict(checkpoint["optimizer_state_dict"])
+    epochs_completed = checkpoint["epochs_completed"]
+
+model.train()
+
+epochs = 0
+for _ in range(epochs):
+    for batch_src, batch_tgt in dataloaders["train"]:
+
+        # Move batch to gpu, prepare model inputs.
+        encoder_in = batch_src.to(device)
+        decoder_in = batch_tgt[:, :-1].to(device)  # Do not include the last token.
+        ground_truth = batch_tgt[:, 1:].to(
+            device
+        )  # Do not include the first token. The ground truth for the SOS token is thus the first word of the French sentence.
+
+        # Create masks.
+        tgt_len = decoder_in.shape[1]
+
+        tgt_causal_mask = get_causal_mask(tgt_len, device)
+        tgt_key_padding_mask = decoder_in == PAD_IDX
+        src_key_padding_mask = encoder_in == PAD_IDX
+
+        # Update weights
+        optimizer.zero_grad()
+
+        features = model(
+            decoder_in,
+            encoder_in,
+            tgt_causal_mask,
+            tgt_key_padding_mask,
+            src_key_padding_mask,
+        )
+        loss = criterion(features.view(-1, features.shape[-1]), ground_truth.view(-1))
+
+        print(loss)
+
+        loss.backward()
+        optimizer.step()
+
+    epochs_completed += 1
+
+torch.save(
+    {
+        "model_state_dict": model.state_dict(),
+        "optimizer_state_dict": optimizer.state_dict(),
+        "epochs_completed": epochs_completed,
+    },
+    "checkpoint.pt",
+)

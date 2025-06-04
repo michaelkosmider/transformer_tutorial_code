@@ -2,9 +2,7 @@ import torch
 
 
 def compute_attention_matrix(Q, K, causal_mask=None, key_padding_mask=None):
-    """
-    Private notes: expecting Q and K to be of shapes (N_batch, heads, Qseqlen, D_k) and (N_batch, heads, Kseqlen, D_k)
-    """
+
     E = Q @ K.transpose(-1, -2)
 
     if causal_mask is not None:
@@ -42,7 +40,7 @@ def slice_vertically(X, slice_size):
 """
 Desciption:
 
-Suppose the input is a 3 dimensional tensor of shape (S, R, C). This function will treat the 
+The input is a 3 dimensional tensor of shape (S, R, C). This function will treat the 
 input as a list of S tensors of shape (R, C) and concatenate them along the column dimension,
 resulsting in a tensor of shape (R, C x S). It undoes the result from slice_vertically, meaning 
 that X = unslice_vertically(slice_vertically(X). Furthermore, any batch size (d0, d1, ... , dn) 
@@ -60,6 +58,13 @@ Output:
 
 def unslice_vertically(X):
     return X.transpose(-2, -3).flatten(-2, -1)
+
+
+"""
+Desciption:
+
+Returns a T by T causal mask on the specified device.
+"""
 
 
 def get_causal_mask(T, device):

@@ -1,5 +1,25 @@
 import torch
 
+"""
+Desciption:
+
+This function computes the attention matrix between queries Q and keys K, which have shapes 
+(T, D_K) and (S, D_K) respectively. Here, T is the length of the input sequence used to create
+Q, and S is the length of the source sequence producing K and V. Forthemore, D_K is the key 
+size. The attention computation is performed in batches of size N_batch, heads, which correspond 
+to the number of sequences in the batch, and the number of heads for each sequence.
+
+Input:
+
+Q - a tensor of shape (N_batch, heads, T, D_K)
+K - a tensor of shape (N_batch, heads, S, D_K)
+causal_mask - a T by T boolean causal mask, where True means do not attend. 
+key_padding_mask - an N by S boolean mask, where True means do not attend. 
+
+Output:
+
+A - a tensor of shape (N_batch, heads, T, S)
+"""
 
 def compute_attention_matrix(Q, K, causal_mask=None, key_padding_mask=None):
 

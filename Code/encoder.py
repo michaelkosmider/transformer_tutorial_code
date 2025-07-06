@@ -31,8 +31,6 @@ class TransformerEncoder(nn.Module):
 
     def __init__(
         self,
-        vocab_size,
-        context_size,
         stack_size=6,
         num_heads=8,
         hidden_size=512,
@@ -43,8 +41,6 @@ class TransformerEncoder(nn.Module):
     ):
         super().__init__()
 
-        self.embeddings = nn.Embedding(vocab_size, hidden_size)
-        self.positional_encodings = nn.Embedding(context_size, hidden_size)
         self.encoder_stack = nn.ModuleList(
             [
                 EncoderLayer(
@@ -60,10 +56,6 @@ class TransformerEncoder(nn.Module):
         )
 
     def forward(self, X, key_padding_mask):
-
-        X = self.embeddings(X) + self.positional_encodings(
-            torch.arange(X.shape[1], device=X.device)
-        )
 
         for encoder_layer in self.encoder_stack:
             X = encoder_layer(X, key_padding_mask)

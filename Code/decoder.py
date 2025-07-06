@@ -43,8 +43,6 @@ class TransformerDecoder(nn.Module):
 
     def __init__(
         self,
-        vocab_size,
-        context_size,
         stack_size=6,
         num_heads=8,
         hidden_size=512,
@@ -55,8 +53,6 @@ class TransformerDecoder(nn.Module):
     ):
         super().__init__()
 
-        self.embeddings = nn.Embedding(vocab_size, hidden_size)
-        self.positional_encodings = nn.Embedding(context_size, hidden_size)
         self.decoder_stack = nn.ModuleList(
             [
                 DecoderLayer(
@@ -72,16 +68,16 @@ class TransformerDecoder(nn.Module):
         )
 
     def forward(
-        self, X_tgt, X_src, tgt_causal_mask, tgt_key_padding_mask, src_key_padding_mask
+        self, X_tgt, X_src, tgt_mask, tgt_key_padding_mask, src_key_padding_mask
     ):
 
-        X = self.embeddings(X_tgt) + self.positional_encodings(
-            torch.arange(X_tgt.shape[1], device=X_tgt.device)
-        )
-
         for decoder_layer in self.decoder_stack:
-            X = decoder_layer(
-                X, X_src, tgt_causal_mask, tgt_key_padding_mask, src_key_padding_mask
+            X_tgt = decoder_layer(
+                X_tgt,
+                X_src,
+                tgt_mask,
+                tgt_key_padding_mask,
+                src_key_padding_mask,
             )
 
-        return X
+        return X_tgt

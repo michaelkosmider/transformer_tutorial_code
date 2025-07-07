@@ -1,9 +1,9 @@
 import torch
 import torch.nn as nn
-from sublayers import AttentionSubLayer, FeedForwardSubLayer
+from .sublayers import AttentionSubLayer, FeedForwardSubLayer
 
 
-class DecoderLayer(nn.Module):
+class TransformerDecoderLayer(nn.Module):
 
     def __init__(
         self, num_heads, hidden_size, key_size, value_size, feedforward_size, dropout
@@ -55,7 +55,7 @@ class TransformerDecoder(nn.Module):
 
         self.decoder_stack = nn.ModuleList(
             [
-                DecoderLayer(
+                TransformerDecoderLayer(
                     num_heads,
                     hidden_size,
                     key_size,

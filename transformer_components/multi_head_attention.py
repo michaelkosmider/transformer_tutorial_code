@@ -1,6 +1,6 @@
 import torch
 import torch.nn as nn
-from functions import compute_attention_matrix, slice_vertically, unslice_vertically
+from .functions import compute_attention_matrix, slice_vertically, unslice_vertically
 
 
 class MultiHeadAttention(nn.Module):

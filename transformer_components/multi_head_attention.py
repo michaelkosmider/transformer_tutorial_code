@@ -18,11 +18,53 @@ class MultiHeadAttention(nn.Module):
         for param in self.parameters():
             nn.init.xavier_normal_(param)
 
-    def forward(self, X_Q, X_KV, causal_mask=None, key_padding_mask=None):
-        #
-        Q = slice_vertically(X_Q @ self.W_Q, self.key_size)
-        K = slice_vertically(X_KV @ self.W_K, self.key_size)
-        V = slice_vertically(X_KV @ self.W_V, self.value_size)
+    def forward(
+        self,
+        X_Q,
+        X_KV,
+        causal_mask=None,
+        key_padding_mask=None,
+        kv_cache=None,
+    ):
+
+        if kv_cache is None:
+            Q = X_Q @ self.W_Q
+            K = X_KV @ self.W_K
+            V = X_KV @ self.W_V
+
+        elif kv_cache["mode"] == "src_cached":
+            Q = X_Q @ self.W_Q
+
+            if "K" not in kv_cache:  # Could also check for V, doesn't matter.
+                kv_cache["K"] = X_KV @ self.W_K
+                kv_cache["V"] = X_KV @ self.W_V
+
+            K = kv_cache["K"]
+            V = kv_cache["V"]
+
+        elif kv_cache["mode"] == "tgt_cached":
+
+            # Compute new Query, Key, and Value (for just one token).
+            Q = X_Q @ self.W_Q
+            K_new = X_KV @ self.W_K
+            V_new = X_KV @ self.W_V
+
+            # Retrieve the cache.
+            K = kv_cache["K"]
+            V = kv_cache["V"]
+
+            # Update the cache with new token Key and Value.
+            K[:, kv_cache["cache_len"], :] = K_new[:, 0, :]
+            V[:, kv_cache["cache_len"], :] = V_new[:, 0, :]
+            kv_cache["cache_len"] += 1
+
+            # Select the valid portion of the cache.
+            K = K[:, : kv_cache["cache_len"], :]
+            V = V[:, : kv_cache["cache_len"], :]
+
+        Q = slice_vertically(Q, self.key_size)
+        K = slice_vertically(K, self.key_size)
+        V = slice_vertically(V, self.value_size)
 
         A = compute_attention_matrix(Q, K, causal_mask, key_padding_mask)
 

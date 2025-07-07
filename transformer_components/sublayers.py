@@ -14,7 +14,9 @@ class AttentionSubLayer(nn.Module):
         self.layernorm = nn.LayerNorm(hidden_size)
 
     # For self attention, X_Q and X_KV are the same. For cross attention, X_KV comes from the reference sequence.
-    def forward(self, X_Q, X_KV, causal_mask=None, key_padding_mask=None):
+    def forward(
+        self, X_Q, X_KV, causal_mask=None, key_padding_mask=None, kv_cache=None
+    ):
         return self.layernorm(
             self.dropout(
                 self.multihead_attention(
@@ -22,6 +24,7 @@ class AttentionSubLayer(nn.Module):
                     X_KV,
                     causal_mask=causal_mask,
                     key_padding_mask=key_padding_mask,
+                    kv_cache=kv_cache,
                 )
             )
             + X_Q

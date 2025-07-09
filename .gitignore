@@ -4,3 +4,4 @@ multi30k
 *.pt
 transformer_components/__pycache__/*
 *.pyc
+transformer_components.egg-info/

@@ -26,7 +26,7 @@ class TransformerDecoderLayer(nn.Module):
         self,
         X_Q,
         X_KV,
-        causal_mask,
+        tgt_mask,
         tgt_key_padding_mask,
         src_key_padding_mask,
         layer_kv_cache,
@@ -35,16 +35,16 @@ class TransformerDecoderLayer(nn.Module):
         X = self.self_multihead_attention_sublayer(
             X_Q,
             X_Q,
-            causal_mask=causal_mask,
+            tgt_mask=tgt_mask,
             key_padding_mask=tgt_key_padding_mask,
-            kv_cache=layer_kv_cache["tgt"],
+            kv_cache=layer_kv_cache["tgt"] if layer_kv_cache is not None else None,
         )
 
         X = self.cross_multihead_attention_sublayer(
             X,
             X_KV,
             key_padding_mask=src_key_padding_mask,
-            kv_cache=layer_kv_cache["src"],
+            kv_cache=layer_kv_cache["src"] if layer_kv_cache is not None else None,
         )
 
         X = self.feedforward_sublayer(X)

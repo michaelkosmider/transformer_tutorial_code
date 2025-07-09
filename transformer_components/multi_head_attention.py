@@ -22,7 +22,7 @@ class MultiHeadAttention(nn.Module):
         self,
         X_Q,
         X_KV,
-        causal_mask=None,
+        tgt_mask=None,
         key_padding_mask=None,
         kv_cache=None,
     ):
@@ -32,17 +32,19 @@ class MultiHeadAttention(nn.Module):
             K = X_KV @ self.W_K
             V = X_KV @ self.W_V
 
-        elif kv_cache["mode"] == "src_cached":
+        elif kv_cache["mode"] == "cross_attn":
             Q = X_Q @ self.W_Q
 
-            if "K" not in kv_cache:  # Could also check for V, doesn't matter.
+            if (
+                "K" not in kv_cache
+            ):  # Could also check for V, doesn't matter. Happens once, the first time the src KVs are computed.
                 kv_cache["K"] = X_KV @ self.W_K
                 kv_cache["V"] = X_KV @ self.W_V
 
             K = kv_cache["K"]
             V = kv_cache["V"]
 
-        elif kv_cache["mode"] == "tgt_cached":
+        elif kv_cache["mode"] == "self_attn":
 
             # Compute new Query, Key, and Value (for just one token).
             Q = X_Q @ self.W_Q
@@ -66,7 +68,7 @@ class MultiHeadAttention(nn.Module):
         K = slice_vertically(K, self.key_size)
         V = slice_vertically(V, self.value_size)
 
-        A = compute_attention_matrix(Q, K, causal_mask, key_padding_mask)
+        A = compute_attention_matrix(Q, K, tgt_mask, key_padding_mask)
 
         Y_prime = A @ V
 

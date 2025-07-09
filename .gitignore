@@ -3,3 +3,4 @@ Code/__pycache__
 multi30k
 *.pt
 scratch_paper.ipynb
+transformer_components/__pycache__/*

@@ -1,4 +1,4 @@
-Code/__pycache__
+*__pycache__*
 .DS_Store
 multi30k
 *.pt

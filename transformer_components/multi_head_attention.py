@@ -64,8 +64,6 @@ class MultiHeadAttention(nn.Module):
             K = K[:, : kv_cache["cache_len"], :]
             V = V[:, : kv_cache["cache_len"], :]
 
-        print(K.shape[1])
-
         Q = slice_vertically(Q, self.key_size)
         K = slice_vertically(K, self.key_size)
         V = slice_vertically(V, self.value_size)

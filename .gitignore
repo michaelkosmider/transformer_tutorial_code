@@ -1,7 +1,12 @@
-Code/__pycache__
+*__pycache__*
 .DS_Store
 multi30k
 *.pt
+<<<<<<< HEAD
 transformer_components/__pycache__/*
 *.pyc
 transformer_components.egg-info/
+=======
+scratch_paper.ipynb
+transformer_components/__pycache__/*
+>>>>>>> kv_caching

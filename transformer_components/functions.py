@@ -21,12 +21,13 @@ Output:
 A - a tensor of shape (N_batch, heads, T, S)
 """
 
-def compute_attention_matrix(Q, K, causal_mask=None, key_padding_mask=None):
+
+def compute_attention_matrix(Q, K, tgt_mask=None, key_padding_mask=None):
 
     E = Q @ K.transpose(-1, -2)
 
-    if causal_mask is not None:
-        E.masked_fill_(causal_mask, -torch.inf)
+    if tgt_mask is not None:
+        E.masked_fill_(tgt_mask, -torch.inf)
 
     if key_padding_mask is not None:
         E.masked_fill_(key_padding_mask[:, None, None, :], -torch.inf)

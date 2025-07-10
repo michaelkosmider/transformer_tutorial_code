@@ -12,13 +12,13 @@ class TransformerEncoderDecoder(nn.Module):
         self.decoder = custom_decoder
 
     def forward(
-        self, X_tgt, X_src, tgt_causal_mask, tgt_key_padding_mask, src_key_padding_mask
+        self, X_tgt, X_src, tgt_mask, tgt_key_padding_mask, src_key_padding_mask
     ):
 
         X_src = self.encoder(X_src, src_key_padding_mask)
 
         logits = self.decoder(
-            X_tgt, X_src, tgt_causal_mask, tgt_key_padding_mask, src_key_padding_mask
+            X_tgt, X_src, tgt_mask, tgt_key_padding_mask, src_key_padding_mask
         )
 
         return logits
@@ -27,130 +27,91 @@ class TransformerEncoderDecoder(nn.Module):
         self, X_src, src_key_padding_mask, num_beams, max_beam_len, SOS_IDX, PAD_IDX
     ):
 
+        # Initialize the kv cache
+        all_kv_cache = self.initialize_kv_cache(
+            num_beams, max_beam_len, device=X_src.device
+        )
+
         # Get source features (encoder output). Only need to do this once.
         src_features = self.encoder(X_src, src_key_padding_mask)
 
-        # Initialize empty beams with SOS + PAD
-        beams = torch.full(
-            (num_beams, max_beam_len), PAD_IDX, dtype=torch.int, device=X_src.device
-        )
+        # Initialize empty beams
+        beams = torch.full((num_beams, max_beam_len), PAD_IDX, device=X_src.device)
         beams[:, 0] = SOS_IDX
-        total_causal_mask = get_causal_mask(max_beam_len, device=X_src.device)
 
-        # Obtain logits for a single SOS token, which will attend to the source sentence.
-        decoder_in = beams[:1, :1]
-        tgt_mask = total_causal_mask[:1, :1]
-        tgt_key_padding_mask = decoder_in == PAD_IDX
+        # Get logits, tokens and scores for the SOS token distribution.
         logits = self.decoder(
-            decoder_in,
+            beams[:, 0:1],
             src_features,
-            tgt_mask,
-            tgt_key_padding_mask,
-            src_key_padding_mask,
+            src_key_padding_mask=src_key_padding_mask,
+            all_kv_cache=all_kv_cache,
+            position=0,
         )
-
-        first_token_scores = torch.log_softmax(logits[0], dim=-1).view(-1)
-
-        # Sample K tokens, and place them in the beams. Initialize scores for each beam.
-        beam_scores, tokens = torch.topk(first_token_scores, num_beams)
+        vocab_scores = torch.log_softmax(logits[0], dim=-1).view(-1)
+        beam_scores, tokens = torch.topk(vocab_scores, num_beams)
         beams[:, 1] = tokens
-        beam_scores = beam_scores.view(num_beams, 1)
 
-        # Deterministic beam search for remaining tokens.
-        for beam_cur_len in range(2, max_beam_len):
-
-            # Get logits for the next token (across all beams).
-            decoder_in = beams[:, :beam_cur_len]
-            tgt_mask = total_causal_mask[:beam_cur_len, :beam_cur_len]
-            tgt_key_padding_mask = decoder_in == PAD_IDX
+        for position in range(1, max_beam_len - 1):
             logits = self.decoder(
-                decoder_in,
+                beams[:, position : position + 1],
                 src_features,
-                tgt_mask,
-                tgt_key_padding_mask,
-                src_key_padding_mask,
+                src_key_padding_mask=src_key_padding_mask,
+                all_kv_cache=all_kv_cache,
+                position=position,
+            ).squeeze()
+
+            candidate_scores = beam_scores.view(num_beams, 1) + torch.log_softmax(
+                logits, -1
             )
-            next_token_logits = logits[:, beam_cur_len - 1, :]
+            beam_scores, indices = torch.topk(candidate_scores.view(-1), num_beams)
 
-            # Select the top K beams from the pool of candidates, update scores.
-            candidates = beam_scores + torch.log_softmax(next_token_logits, dim=-1)
-            scores, indices = torch.topk(candidates.view(-1), num_beams)
-            beam_indices = indices // self.decoder.vocab_size
-            tokens = indices % self.decoder.vocab_size
+            next_tokens = indices % self.decoder.vocab_size
+            next_beam_indices = indices // self.decoder.vocab_size
 
-            beams = beams[
-                beam_indices
-            ]  # Re-arrange the beams in terms of score. Some beams are eliminated, while some are duplicated one or more times.
-            beams[:, beam_cur_len] = tokens
-            beam_scores = scores.view(num_beams, 1)
+            beams = beams[next_beam_indices]
+            beams[:, position + 1] = next_tokens
 
-        return beams[0]
+            self.reorder_kv_cache(all_kv_cache, next_beam_indices)
 
-    # def generate(
-    #     self, X_src, src_key_padding_mask, beam_K, beam_max_len, SOS_IDX, PAD_IDX
-    # ):
+        return beams
 
-    #     device = X_src.device
+    def initialize_kv_cache(self, num_beams, max_beam_len, device):
 
-    #     # Get source features (encoder output). Only need to do this once.
-    #     src_features = self.encoder(X_src, src_key_padding_mask)
+        all_kv_cache = [{} for i in range(self.decoder.stack_size)]
 
-    #     # Initialize empty beams with SOS + PAD
-    #     beams = torch.full(
-    #         (beam_K, beam_max_len), PAD_IDX, dtype=torch.int, device=device
-    #     )
-    #     beams[:, 0] = SOS_IDX
-    #     total_causal_mask = get_causal_mask(beam_max_len, device=device)
+        for layer_kv_cache in all_kv_cache:
+            # Cache for self attention
+            tgt_kv_cache = {}
+            tgt_kv_cache["mode"] = "self_attn"
+            tgt_kv_cache["K"] = torch.zeros(
+                size=(
+                    num_beams,
+                    max_beam_len,
+                    self.decoder.num_heads * self.decoder.key_size,
+                ),
+                device=device,
+            )
+            tgt_kv_cache["V"] = torch.zeros(
+                size=(
+                    num_beams,
+                    max_beam_len,
+                    self.decoder.num_heads * self.decoder.value_size,
+                ),
+                device=device,
+            )
+            tgt_kv_cache["cache_len"] = 0
 
-    #     # Obtain logits for a single SOS token, which will attend to the source sentence.
-    #     decoder_in = beams[:1, :1]
-    #     tgt_mask = total_causal_mask[:1, :1]
-    #     tgt_key_padding_mask = decoder_in == PAD_IDX
-    #     logits = self.decoder(
-    #         decoder_in,
-    #         src_features,
-    #         tgt_mask,
-    #         tgt_key_padding_mask,
-    #         src_key_padding_mask,
-    #     )
+            # Cache for cross attention
+            src_kv_cache = {}
+            src_kv_cache["mode"] = "cross_attn"
 
-    #     # Obtain the score for each token. Also obtain a probability distribution over all tokens.
-    #     first_token_probs = torch.softmax(logits, dim=-1).view(-1)
-    #     first_token_scores = torch.log_softmax(logits, dim=-1).view(
-    #         -1
-    #     )  # Despite already having softmax, log_softmax is more numerically stable, and thus preferred.
+            layer_kv_cache["tgt"] = tgt_kv_cache
+            layer_kv_cache["src"] = src_kv_cache
 
-    #     # Sample K tokens, and place them in the beams. Initialize scores for each beam.
-    #     tokens = torch.multinomial(first_token_probs, beam_K)
-    #     beams[:, 1] = tokens
-    #     beam_scores = first_token_scores[tokens].view(beam_K, 1)
+        return all_kv_cache
 
-    #     # Deterministic beam search for remaining tokens.
-    #     for beam_cur_len in range(2, beam_max_len):
+    def reorder_kv_cache(self, all_kv_cache, beam_indices):
 
-    #         # Get logits for the next token (across all beams).
-    #         decoder_in = beams[:, :beam_cur_len]
-    #         tgt_mask = total_causal_mask[:beam_cur_len, :beam_cur_len]
-    #         tgt_key_padding_mask = decoder_in == PAD_IDX
-    #         logits = self.decoder(
-    #             decoder_in,
-    #             src_features,
-    #             tgt_mask,
-    #             tgt_key_padding_mask,
-    #             src_key_padding_mask,
-    #         )
-    #         next_token_logits = logits[:, beam_cur_len - 1, :]
-
-    #         # Select the top K beams from the pool of candidates, update scores.
-    #         candidates = beam_scores + next_token_logits
-    #         scores, indices = torch.topk(candidates.view(-1), beam_K)
-    #         beam_indices = indices // self.decoder.vocab_size
-    #         tokens = indices % self.decoder.vocab_size
-
-    #         beams = beams[
-    #             beam_indices
-    #         ]  # Re-arrange the beams in terms of score. Some beams are eliminated, while some are duplicated one or more times.
-    #         beams[:, beam_cur_len] = tokens
-    #         beam_scores = beam_scores[beam_indices] + scores.view(beam_K, 1)
-
-    #     return beams[0]
+        for layer_kv_cache in all_kv_cache:
+            layer_kv_cache["tgt"]["K"] = layer_kv_cache["tgt"]["K"][beam_indices]
+            layer_kv_cache["tgt"]["V"] = layer_kv_cache["tgt"]["V"][beam_indices]

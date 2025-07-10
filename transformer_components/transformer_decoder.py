@@ -23,15 +23,28 @@ class TransformerDecoderLayer(nn.Module):
         )
 
     def forward(
-        self, X_Q, X_KV, causal_mask, tgt_key_padding_mask, src_key_padding_mask
+        self,
+        X_Q,
+        X_KV,
+        tgt_mask,
+        tgt_key_padding_mask,
+        src_key_padding_mask,
+        layer_kv_cache,
     ):
 
         X = self.self_multihead_attention_sublayer(
-            X_Q, X_Q, causal_mask=causal_mask, key_padding_mask=tgt_key_padding_mask
+            X_Q,
+            X_Q,
+            tgt_mask=tgt_mask,
+            key_padding_mask=tgt_key_padding_mask,
+            kv_cache=layer_kv_cache["tgt"] if layer_kv_cache is not None else None,
         )
 
         X = self.cross_multihead_attention_sublayer(
-            X, X_KV, key_padding_mask=src_key_padding_mask
+            X,
+            X_KV,
+            key_padding_mask=src_key_padding_mask,
+            kv_cache=layer_kv_cache["src"] if layer_kv_cache is not None else None,
         )
 
         X = self.feedforward_sublayer(X)
@@ -68,16 +81,29 @@ class TransformerDecoder(nn.Module):
         )
 
     def forward(
-        self, X_tgt, X_src, tgt_mask, tgt_key_padding_mask, src_key_padding_mask
+        self,
+        X_tgt,
+        X_src,
+        tgt_mask,
+        tgt_key_padding_mask,
+        src_key_padding_mask,
+        all_kv_cache=None,
     ):
 
-        for decoder_layer in self.decoder_stack:
+        for (
+            i,
+            decoder_layer,
+        ) in enumerate(self.decoder_stack):
+
+            layer_kv_cache = all_kv_cache[i] if all_kv_cache is not None else None
+
             X_tgt = decoder_layer(
                 X_tgt,
                 X_src,
                 tgt_mask,
                 tgt_key_padding_mask,
                 src_key_padding_mask,
+                layer_kv_cache,
             )
 
         return X_tgt

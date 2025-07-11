@@ -49,6 +49,8 @@ class TransformerEncoderDecoder(nn.Module):
         )
         vocab_scores = torch.log_softmax(logits[0], dim=-1).view(-1)
         beam_scores, tokens = torch.topk(vocab_scores, num_beams)
+        beam_lengths = torch.ones(num_beams)
+        finished_beams = torch.zeros(num_beams, dtype=torch.bool)
         beams[:, 1] = tokens
 
         for position in range(1, max_beam_len - 1):
@@ -63,8 +65,8 @@ class TransformerEncoderDecoder(nn.Module):
             candidate_scores = beam_scores.view(num_beams, 1) + torch.log_softmax(
                 logits, -1
             )
-            beam_scores, indices = torch.topk(candidate_scores.view(-1), num_beams)
 
+            beam_scores, indices = torch.topk(candidate_scores.view(-1), num_beams)
             next_tokens = indices % self.decoder.vocab_size
             next_beam_indices = indices // self.decoder.vocab_size
 

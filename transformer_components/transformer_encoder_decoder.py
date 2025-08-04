@@ -1,6 +1,5 @@
 import torch
 import torch.nn as nn
-from .functions import get_causal_mask
 
 
 class TransformerEncoderDecoder(nn.Module):
@@ -23,9 +22,19 @@ class TransformerEncoderDecoder(nn.Module):
 
         return logits
 
+    # Quick note: the decoder must expose .stack_size, .vocab_size, .key_size and .value_size, .num_heads
     def generate(
-        self, X_src, src_key_padding_mask, num_beams, max_beam_len, SOS_IDX, PAD_IDX
+        self,
+        X_src,
+        src_key_padding_mask,
+        num_beams,
+        max_beam_len,
+        SOS_IDX,
+        PAD_IDX,
+        EOS_IDX,
     ):
+
+        batch_size = X_src.shape[0]
 
         # Initialize the kv cache
         all_kv_cache = self.initialize_kv_cache(
@@ -34,6 +43,8 @@ class TransformerEncoderDecoder(nn.Module):
 
         # Get source features (encoder output). Only need to do this once.
         src_features = self.encoder(X_src, src_key_padding_mask)
+        # Repeat source once per beam. Shape goes from (N,T,H) to (N*K,T,H).
+        src_features = torch.repeat_interleave(src_features, num_beams, dim=0)
 
         # Initialize empty beams
         beams = torch.full((num_beams, max_beam_len), PAD_IDX, device=X_src.device)
@@ -49,9 +60,10 @@ class TransformerEncoderDecoder(nn.Module):
         )
         vocab_scores = torch.log_softmax(logits[0], dim=-1).view(-1)
         beam_scores, tokens = torch.topk(vocab_scores, num_beams)
-        beam_lengths = torch.ones(num_beams)
-        finished_beams = torch.zeros(num_beams, dtype=torch.bool)
         beams[:, 1] = tokens
+
+        # For keeping track of finished beams.
+        dead_beams = tokens == EOS_IDX
 
         for position in range(1, max_beam_len - 1):
             logits = self.decoder(
@@ -62,9 +74,10 @@ class TransformerEncoderDecoder(nn.Module):
                 position=position,
             ).squeeze()
 
-            candidate_scores = beam_scores.view(num_beams, 1) + torch.log_softmax(
-                logits, -1
-            )
+            log_probs = torch.log_softmax(logits, -1)
+            log_probs[dead_beams] = -torch.inf
+            log_probs[dead_beams, EOS_IDX] = 0
+            candidate_scores = beam_scores.view(num_beams, 1) + log_probs
 
             beam_scores, indices = torch.topk(candidate_scores.view(-1), num_beams)
             next_tokens = indices % self.decoder.vocab_size
@@ -72,6 +85,10 @@ class TransformerEncoderDecoder(nn.Module):
 
             beams = beams[next_beam_indices]
             beams[:, position + 1] = next_tokens
+
+            dead_beams = dead_beams[next_beam_indices] | (next_tokens == EOS_IDX)
+            if dead_beams.all():
+                break
 
             self.reorder_kv_cache(all_kv_cache, next_beam_indices)
 

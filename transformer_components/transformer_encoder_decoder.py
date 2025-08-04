@@ -29,6 +29,7 @@ class TransformerEncoderDecoder(nn.Module):
         src_key_padding_mask,
         num_beams,
         max_beam_len,
+        length_alpha,
         SOS_IDX,
         PAD_IDX,
         EOS_IDX,
@@ -38,16 +39,21 @@ class TransformerEncoderDecoder(nn.Module):
 
         # Initialize the kv cache
         all_kv_cache = self.initialize_kv_cache(
-            num_beams, max_beam_len, device=X_src.device
+            batch_size * num_beams, max_beam_len, device=X_src.device
         )
 
         # Get source features (encoder output). Only need to do this once.
         src_features = self.encoder(X_src, src_key_padding_mask)
         # Repeat source once per beam. Shape goes from (N,T,H) to (N*K,T,H).
         src_features = torch.repeat_interleave(src_features, num_beams, dim=0)
+        src_key_padding_mask = torch.repeat_interleave(
+            src_key_padding_mask, num_beams, 0
+        )
 
         # Initialize empty beams
-        beams = torch.full((num_beams, max_beam_len), PAD_IDX, device=X_src.device)
+        beams = torch.full(
+            (batch_size * num_beams, max_beam_len), PAD_IDX, device=X_src.device
+        )
         beams[:, 0] = SOS_IDX
 
         # Get logits, tokens and scores for the SOS token distribution.
@@ -57,14 +63,18 @@ class TransformerEncoderDecoder(nn.Module):
             src_key_padding_mask=src_key_padding_mask,
             all_kv_cache=all_kv_cache,
             position=0,
-        )
-        vocab_scores = torch.log_softmax(logits[0], dim=-1).view(-1)
-        beam_scores, tokens = torch.topk(vocab_scores, num_beams)
+        ).squeeze()
+
+        vocab_scores = torch.log_softmax(logits[::num_beams], dim=-1)
+        beam_scores, tokens = torch.topk(vocab_scores, k=num_beams, dim=-1)
+        tokens = tokens.view(-1)
+        beam_scores = beam_scores.view(-1)
         beams[:, 1] = tokens
 
         # For keeping track of finished beams.
         dead_beams = tokens == EOS_IDX
 
+        # Generate.
         for position in range(1, max_beam_len - 1):
             logits = self.decoder(
                 beams[:, position : position + 1],
@@ -74,25 +84,48 @@ class TransformerEncoderDecoder(nn.Module):
                 position=position,
             ).squeeze()
 
+            # Compute candidate scores.
             log_probs = torch.log_softmax(logits, -1)
             log_probs[dead_beams] = -torch.inf
             log_probs[dead_beams, EOS_IDX] = 0
-            candidate_scores = beam_scores.view(num_beams, 1) + log_probs
+            candidate_scores = beam_scores.view(batch_size * num_beams, 1) + log_probs
 
-            beam_scores, indices = torch.topk(candidate_scores.view(-1), num_beams)
+            # Compute next tokens, next beams, and new beam scores.
+            beam_scores, indices = torch.topk(
+                candidate_scores.view(batch_size, -1), k=num_beams, dim=-1
+            )
             next_tokens = indices % self.decoder.vocab_size
+            next_tokens = next_tokens.view(-1)
+            beam_scores = beam_scores.view(-1)
             next_beam_indices = indices // self.decoder.vocab_size
+            offset = torch.arange(
+                start=0, end=batch_size * num_beams, step=num_beams, device=X_src.device
+            ).view(batch_size, -1)
+            next_beam_indices = (next_beam_indices + offset).view(-1)
 
+            # Re-select beams and cache, append new tokens.
             beams = beams[next_beam_indices]
             beams[:, position + 1] = next_tokens
-
             dead_beams = dead_beams[next_beam_indices] | (next_tokens == EOS_IDX)
+            self.reorder_kv_cache(all_kv_cache, next_beam_indices)
+
             if dead_beams.all():
                 break
 
-            self.reorder_kv_cache(all_kv_cache, next_beam_indices)
+        # Apply length penalties.
+        beam_lengths = torch.argmax((beams == EOS_IDX).int(), dim=-1)
+        # Slightly sketchy, because it requires that SOS is the first token. However, it is for now.
+        beam_lengths.masked_fill_(beam_lengths == 0, max_beam_len - 1)
 
-        return beams
+        penalty = ((5 + beam_lengths) / 6) ** length_alpha
+        adjusted_scores = beam_scores / penalty
+        best_beam_indices = torch.argmax(adjusted_scores.view(batch_size, -1), dim=-1)
+        offset = torch.arange(
+            start=0, end=batch_size * num_beams, step=num_beams, device=X_src.device
+        )
+        best_beam_indices = offset + best_beam_indices
+
+        return beams[best_beam_indices]
 
     def initialize_kv_cache(self, num_beams, max_beam_len, device):
 

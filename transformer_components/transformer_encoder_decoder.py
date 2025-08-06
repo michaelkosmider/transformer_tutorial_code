@@ -46,9 +46,10 @@ class TransformerEncoderDecoder(nn.Module):
         src_features = self.encoder(X_src, src_key_padding_mask)
         # Repeat source once per beam. Shape goes from (N,T,H) to (N*K,T,H).
         src_features = torch.repeat_interleave(src_features, num_beams, dim=0)
-        src_key_padding_mask = torch.repeat_interleave(
-            src_key_padding_mask, num_beams, 0
-        )
+        if src_key_padding_mask is not None:
+            src_key_padding_mask = torch.repeat_interleave(
+                src_key_padding_mask, num_beams, 0
+            )
 
         # Initialize empty beams
         beams = torch.full(

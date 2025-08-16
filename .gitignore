@@ -4,3 +4,7 @@ multi30k
 *.pt
 *.pyc
 transformer_components.egg-info/
+# Build artifacts
+dist/
+build/
+*.egg-info/

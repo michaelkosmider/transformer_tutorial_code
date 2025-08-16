@@ -1,0 +1,22 @@
+[build-system]
+requires = ["setuptools>=61.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "transformer_components_michaelkosmider"
+version = "0.1.1"
+description = "Reusable Transformer model components."
+readme = { file = "README_pypi.md", content-type = "text/markdown" }
+requires-python = ">=3.8"
+license = "MIT"
+license-files = ["LICEN[CS]E*"]
+authors = [
+    { name = "Michael Kosmider", email = "michael.kosmider24@gmail.com" }
+]
+
+# No mandatory dependencies
+dependencies = []
+
+[tool.setuptools.packages.find]
+where = ["."]
+

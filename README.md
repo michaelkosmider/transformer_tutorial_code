@@ -1,1 +1,1 @@
-Hi! This is the source code for my transformer tutorial. You can see a demo in demo.ipynb, or look around the modules for details. 
+Hi! This is the source code for my transformer tutorial. You can see a demo in demo.ipynb, or look around at implementation details.
